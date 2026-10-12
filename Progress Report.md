@@ -15,5 +15,5 @@ PROGRESS REPORT
 | 9/10/26 | finished pass 0x0| finish pass 0x1 |
 | 10/10/26 |read and write functions in pass 0x1 | FINSH IT|
 | 11/10/26 | finished pass 0x1, almost done with pass 0x2| get pass 0x3 over with |
-| 12/10/26 |  |  |
+| 12/10/26 | finished checking pass 0x2, starting on pass0x3 |  |
 | 13/10/26 |  | make changes in code to make it work on linux |
