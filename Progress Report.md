@@ -16,4 +16,10 @@ PROGRESS REPORT
 | 10/10/26 |read and write functions in pass 0x1 | FINSH IT|
 | 11/10/26 | finished pass 0x1, almost done with pass 0x2| get pass 0x3 over with |
 | 12/10/26 | finished checking pass 0x2, starting on pass0x3, finished the code now i work on linux thingy |  |
-| 13/10/26 |  | make changes in code to make it work on linux |
+| 13/10/26 | realized my code basically runs in linux too because only the standard headers are used so yay, ran it in my ubuntu terminal and it works| revise and test code with more source.bin tests  |
+
+
+
+
+NOTE:
+none of my code from last week was committed before because i had been working on my desktop locally and "committing code" on the github desktop app while in reality it wasnt being committed at all. 
