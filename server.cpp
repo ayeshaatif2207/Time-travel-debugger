@@ -668,7 +668,6 @@ void writeTdbg(Timeline& timeline, const char* tdbgPath) {
 int32_t main() {
 
     if (!validateProgram("source.bin")) {
-        // send an error response instead of a .tdbg file
         return 1;
     }
 
@@ -692,7 +691,6 @@ int32_t main() {
 
     fclose(f);
     cout << "main is at " << mainOffset << endl;
-
 
 
 
@@ -727,6 +725,7 @@ int32_t main() {
     }
 
     writeTdbg(timeline, "session.tdbg");
+    cout << "session.tdbg written with " << timeline.getStepCount() << " steps" << endl;
 
     return 0;
 }
