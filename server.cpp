@@ -7,9 +7,6 @@
 //   3. Pass 0X2   -- execute resolve.bin: tokenize ONE line at a time, update the call stack, take a snapshot -> Timeline
 //   4. Pass 0X3   -- serialize Timeline -> session.tdbg(header + snapshot records + dense index)
 
-//THINGS SKIPPED TO DO LATER
-//- PROPER ERROR HANDLING, WITH TRY CATCH
-//- BETTER COUT LINES
 
 
 #define _CRT_SECURE_NO_WARNINGS
@@ -163,8 +160,8 @@ struct TTDBHeader {
 void writeHeader(FILE* f, const TTDBHeader& h) {
     fwrite(h.magic, 1, 4, f);
     fwrite(&h.version, sizeof(int32_t), 1, f);
-
-    // placeholder for other two data members
+    fwrite(&h.stepCount, sizeof(int32_t), 1, f);
+    fwrite(&h.indexOffset, sizeof(int64_t), 1, f);
 }
 
 // resolve.bin - bookkeeping
@@ -654,12 +651,73 @@ void executeProgram(const char* resolveBinPath, int64_t mainOffset, Timeline& ti
 
 // PASS 0x3: SERIALIZE TIMELINE
 
+void writeString(FILE* f, const string& s) {
+    int32_t len = (int32_t)s.size();
+    fwrite(&len, sizeof(int32_t), 1, f);
+    fwrite(s.c_str(), 1, len, f);
+}
+void writeSnapshot(FILE* f, Snapshot* s) {
+    fwrite(&s->stackDepth, sizeof(int32_t), 1, f);
+
+    for (int i = 0; i < s->stackDepth; i++) {
+        Frame& fr = s->callStack[i];
+
+        writeString(f, fr.func_name);
+
+        fwrite(&fr.argc, sizeof(int32_t), 1, f);
+        for (int j = 0; j < fr.argc; j++) {
+            writeString(f, fr.argv[j].name);
+            fwrite(&fr.argv[j].value, sizeof(int32_t), 1, f);
+        }
+
+        fwrite(&fr.returnLine, sizeof(int32_t), 1, f);
+
+        fwrite(&fr.localCount, sizeof(int32_t), 1, f);
+        for (int j = 0; j < fr.localCount; j++) {
+            writeString(f, fr.locals[j].name);
+            fwrite(&fr.locals[j].value, sizeof(int32_t), 1, f);
+        }
+    }
+}
 void writeTdbg(Timeline& timeline, const char* tdbgPath) {
-    // placeholder for header
-    // index array of the size of stepcount from the timeline
-    // placing each snapshot in the file while maintaining the index(starting point of each nth snapshot)
-    // after timeline add the index array i the file
-    // update the header
+    FILE* f = fopen(tdbgPath, "wb");
+    if (f == NULL) {
+        cout << "Error: could not create " << tdbgPath << endl;
+        exit(1);
+    }
+
+    int32_t steps = timeline.getStepCount();
+
+    TTDBHeader h;
+    h.magic[0] = 'T';
+    h.magic[1] = 'T';
+    h.magic[2] = 'D';
+    h.magic[3] = 'B';
+    h.version = 1;
+    h.stepCount = steps;
+    h.indexOffset = 0;
+    writeHeader(f, h);
+
+    int64_t* index = new int64_t[steps];
+    int i = 0;
+    TimelineNode* curr = timeline.begin();
+    while (curr != NULL) {
+        index[i] = ftell(f);
+        writeSnapshot(f, curr->data);
+        i++;
+        curr = curr->next;
+    }
+
+    h.indexOffset = ftell(f);
+    for (i = 0; i < steps; i++) {
+        fwrite(&index[i], sizeof(int64_t), 1, f);
+    }
+
+    fseek(f, 0, SEEK_SET);
+    writeHeader(f, h);
+
+    delete[] index;
+    fclose(f);
 }
 // main section
 
