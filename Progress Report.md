@@ -11,4 +11,9 @@ PROGRESS REPORT
 | 5/10/26 | sick. | Not be sick |
 | 6/10/26 | finished the stack class, wasted more time trying to set up the wsl vscode extension | just anything at this point |
 | 7/10/26 | timeline part | everything |
-| 8/10/26 | | |
+| 8/10/26 | readsourceline function from pass0x0| finish pass 0x0 |
+| 9/10/26 | finished pass 0x0| finish pass 0x1 |
+| 10/10/26 |read and write functions in pass 0x1 | FINSH IT|
+| 11/10/26 | finished pass 0x1, almost done with pass 0x2| get pass 0x3 over with |
+| 12/10/26 |  |  |
+| 13/10/26 |  | make changes in code to make it work on linux |
