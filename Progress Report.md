@@ -17,9 +17,18 @@ PROGRESS REPORT
 | 11/10/26 | finished pass 0x1, almost done with pass 0x2| get pass 0x3 over with |
 | 12/10/26 | finished checking pass 0x2, starting on pass0x3, finished the code now i work on linux thingy |  |
 | 13/10/26 | realized my code basically runs in linux too because only the standard headers are used so yay, ran it in my ubuntu terminal and it works| revise and test code with more source.bin tests  |
+|2/11/26 |started working on understanding sockets and thread |linking phase01 to phase 02 and working on the helper.cpp part|
+|3/11/26  | researched checksum methods and crc-32 | try implementing some checksum algorithms myself |
+|4/11/26  | ran 2 ubuntu terminals together, moved structs and constants to helper.cpp, wrote sendall and recvall functions | write crc-32, write the trailercheck func, just start coding it all out now|
+|  |  |
+|  |  | 
+|  |  |
+|  |  |
+|  |  |
+|  |  |
+|  |  |
 
 
 
-
-NOTE:
+NOTE:(from phase-01)
 none of my code from last week was committed before because i had been working on my desktop locally and "committing code" on the github desktop app while in reality it wasnt being committed at all. 
