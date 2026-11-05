@@ -60,3 +60,12 @@ struct PendingPatch
     int64_t byteOffsetOfOffsetField; // where in resolve.bin to seek back and overwrite
     string targetFuncName;
 };
+
+
+
+
+
+
+
+
+
