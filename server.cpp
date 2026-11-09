@@ -8,6 +8,10 @@
 //   4. Pass 0X3   -- serialize Timeline -> session.tdbg(header + snapshot records + dense index)
 
 
+//PHASE 2 TODOs:
+//FIX THE WAY IT EXITS THE PROGRAM ON ERRORS IN VALIDATE AND EXECUTE FUNCTIONS,
+//IT SHOULD GO BACK TO THE MAIN AN D NOT EXIT 
+
 
 #define _CRT_SECURE_NO_WARNINGS
 #include <iostream>
