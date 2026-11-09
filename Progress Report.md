@@ -18,11 +18,11 @@ PROGRESS REPORT
 | 12/10/26 | finished checking pass 0x2, starting on pass0x3, finished the code now i work on linux thingy |  |
 | 13/10/26 | realized my code basically runs in linux too because only the standard headers are used so yay, ran it in my ubuntu terminal and it works| revise and test code with more source.bin tests  |
 |2/11/26 |started working on understanding sockets and thread |linking phase01 to phase 02 and working on the helper.cpp part|
-|3/11/26  | researched checksum methods and crc-32 | try implementing some checksum algorithms myself |
+|3/11/26  | researched checksum methods and crc-32 and data intergrity verification (for the transmission) | try implementing some checksum algorithms myself |
 |4/11/26  | ran 2 ubuntu terminals together, moved structs and constants to helper.cpp, wrote sendall and recvall functions | write crc-32, write the trailercheck func, just start coding it all out now|
 |5-7/11/26 |wtached videos and practiced std::threads, std::mutex and sockets, also started on my checksums|
 | 8/11/26 | finishing up my helper.h and noting all the changes to make to server.cpp  | 
-|  |  |
+|9/11/26 |socket communication helpers, and server-side upload handling and response functionality.updated files on GitHut | early morning: try to finish load-balancer, thread synchronisation and socket comm b/w the client and server.
 |  |  |
 |  |  |
 |  |  |
