@@ -23,7 +23,7 @@ PROGRESS REPORT
 |5-7/11/26 |wtached videos and practiced std::threads, std::mutex and sockets, also started on my checksums|
 | 8/11/26 | finishing up my helper.h and noting all the changes to make to server.cpp  | 
 |9/11/26 |socket communication helpers, and server-side upload handling and response functionality.updated files on GitHut | early morning: try to finish load-balancer, thread synchronisation and socket comm b/w the client and server.
-|  |  |
+|10/11/26 |the queue for the loadbalancer, parts B,C,E for client.cpp, decided to implement a simple cacheing system(with queue as my bonus and thought of more ideas|finish client.cpp and make some substantial progress with load balancer, try to finish the project and start on some bonus something   |
 |  |  |
 |  |  |
 |  |  |
