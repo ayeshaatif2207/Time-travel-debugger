@@ -53,44 +53,58 @@ int serverPort = 5001;
 // ---- Queue: here it holds client sockets (int). ----
 // Implement it yourself, do not use std::queue.
 template <typename T>
-class Queue
-{
-    struct Node
-    {
+class Queue {
+    struct Node {
         T data;
-        Node *next;
+        Node* next;
     };
-    Node *front, *rear;
+    Node* front, * rear;
     int count;
-
-
+ 
 public:
-    // Implement these functions:
-    Queue()
-    {
-
+    Queue() {
+        front = NULL;
+        rear = NULL;
+        count = 0;
     }
-    ~Queue()
-    {
-
+    ~Queue() {
+        while (front != NULL) {
+            dequeue();
+        }
     }
-    void enqueue(const T &val)
-    {
-
+    void enqueue(const T& val) {
+        Node* newNode = new Node;
+        newNode->data = val;
+        newNode->next = NULL;
+        if (rear == NULL) {
+            front = newNode;
+            rear = newNode;
+        }
+        else {
+            rear->next = newNode;
+            rear = newNode;
+        }
+        count++;
     }
-    T dequeue()
-    {
-
+    T dequeue() {
+        Node* temp = front;
+        T value = temp->data;
+        front = front->next;
+        if (front == NULL) {
+            rear = NULL;
+        }
+        delete temp;
+        count--;
+        return value;
     }
-    bool isEmpty()
-    {
-        
+    bool isEmpty() {
+        return front == NULL;
     }
-    int size()
-    {
-
+    int size() {
+        return count;
     }
 };
+
 
 struct ClientInfo
 {
@@ -107,11 +121,10 @@ sig_atomic_t flag = 1;
 
 
 // ---- Basic socket helpers ----
+
 bool sendAll(int sock, const char *buf, size_t n) 
 {
-    // Reply format: [status: 1 byte][sending_material][checksum: 4 bytes].
-    // send() may send fewer bytes than asked for, so keep calling it until all n bytes are sent.
-    
+    return sendMessage(sock, STATUS_ERROR, message);    
 }
 bool sendError(int sock, const string &message)
 {
@@ -127,8 +140,7 @@ int createListenSocket(int port)
 }
 int connectToServer(const char *host, int port)
 {
-    // Create a TCP socket (SOCK_CLOEXEC) and connect it to host:port.
-    // Return the socket, or -1 if the connection fails 
+    return connectTo(host, port);
 }
 
 // =============================================================================================

@@ -20,10 +20,17 @@ PROGRESS REPORT
 |2/11/26 |started working on understanding sockets and thread |linking phase01 to phase 02 and working on the helper.cpp part|
 |3/11/26  | researched checksum methods and crc-32 and data intergrity verification (for the transmission) | try implementing some checksum algorithms myself |
 |4/11/26  | ran 2 ubuntu terminals together, moved structs and constants to helper.cpp, wrote sendall and recvall functions | write crc-32, write the trailercheck func, just start coding it all out now|
+<<<<<<< HEAD
 |5-7/11/26 |wtached videos and practiced std::threads, std::mutex and sockets, also started on my checksums|
 | 8/11/26 | finishing up my helper.h and noting all the changes to make to server.cpp  | 
 |9/11/26 |socket communication helpers, and server-side upload handling and response functionality.updated files on GitHut | early morning: try to finish load-balancer, thread synchronisation and socket comm b/w the client and server.
 |10/11/26 |the queue for the loadbalancer, parts B,C,E for client.cpp, decided to implement a simple cacheing system(with queue as my bonus and thought of more ideas|finish client.cpp and make some substantial progress with load balancer, try to finish the project and start on some bonus something   |
+=======
+|5-7/11/26 |Studied and practised multithreading using std::thread and std::mutex. Experimented with socket communication between two Ubuntu terminals and began implementing checksum algos|
+| 8/11/26 | finishing up my helper.h and noting all the changes to make to server.cpp  | 
+|  |  |
+|  |  |
+>>>>>>> 2e9e180 (client: parts B, C, E and compile fixes, load balancer queue)
 |  |  |
 |  |  |
 |  |  |

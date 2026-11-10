@@ -22,51 +22,57 @@
 #include <signal.h>
 #include <vector>
 #include <sys/socket.h>
+#include <fcntl.h>
+#include <sstream> // for runCommand
+#include <cerrno>    // for
 #include "helper.h"
 using namespace std;
 
 // ---- Constants ----
 const char *PROGRAM_NAME = "ttdb";
 const char *PROMPT = "ttdb> ";
-const int IO_BUFFER_SIZE = 64 * 1024;     // fixed buffer for streaming files to and from the socket
 const char *TDBG_FILE = "ttdb_last.tdbg"; // where the downloaded .tdbg is saved
 const int MAX_JUMP = 1000000000;          // biggest n accepted by jmp
-string LB_HOST = "127.0.0.0";
+string LB_HOST = "127.0.0.1";
 int LB_PORT = 5000;
+const int HEADER_SIZE = 20;     // 4 magic + 4 version + 4 stepCount + 8 indexOffset
+const int MAX_NAME_LENGTH = 4096;  //longer name = damages file
 
 // These two must be the same as in Phase 1
+// this is now in helper.h 
+//const int IO_BUFFER_SIZE = 64 * 1024;     // fixed buffer for streaming files to and from the socket
+//const int MAX_VARS_PER_FRAME = 16;
+//const int MAX_STACK_DEPTH = 64;
 
-const int MAX_VARS_PER_FRAME = 16;
-const int MAX_STACK_DEPTH = 64;
 
-
-// ---- Structs (same as Phase 1, so the file can be read back exactly as it was written) ----
-struct Variable
-{
-    string name;
-    int32_t value;
-};
-struct Frame
-{
-    string func_name;
-    int32_t argc;
-    Variable argv[MAX_VARS_PER_FRAME];
-    int32_t returnLine;
-    Variable locals[MAX_VARS_PER_FRAME];
-    int32_t localCount;
-};
-struct Snapshot
-{
-    Frame callStack[MAX_STACK_DEPTH];
-    int32_t stackDepth;
-};
-struct TTDBHeader 
-{
-    char magic[4]; // "TTDB"
-    int32_t version;
-    int32_t stepCount;
-    int64_t indexOffset;
-};
+// ---- Structs (same as Phase 1, so the file can be read back exactly as it was written) 
+// removing structs from here since they are in my helper.h
+// struct Variable
+// {
+//     string name;
+//     int32_t value;
+// };
+// struct Frame
+// {
+//     string func_name;
+//     int32_t argc;
+//     Variable argv[MAX_VARS_PER_FRAME];
+//     int32_t returnLine;
+//     Variable locals[MAX_VARS_PER_FRAME];
+//     int32_t localCount;
+// };
+// struct Snapshot
+// {
+//     Frame callStack[MAX_STACK_DEPTH];
+//     int32_t stackDepth;
+// };
+// struct TTDBHeader 
+// {
+//     char magic[4]; // "TTDB"
+//     int32_t version;
+//     int32_t stepCount;
+//     int64_t indexOffset;
+// };
 
 // ---- Structs only the client needs ----
 struct TdbgReader
@@ -86,16 +92,17 @@ struct DebugSession
 // PART A: TALKING TO THE LOAD BALANCER
 // =============================================================================================
 
-bool recvAll(int sock, char *buf, size_t n)
-{
-    // recv() can return fewer bytes than asked for, so keep calling it until exactly n bytes are read.
-    // Return false if the connection closes or fails before n bytes arrive.
-}
-bool sendAll(int sock, const char *buf, size_t n)
-{
-    // send() can send fewer bytes than asked for, so keep calling it until all n bytes are sent.
-    // Use the flag MSG_NOSIGNAL. Return false if the connection fails.
-}
+// these 2 functions are also in helper.h
+// bool recvAll(int sock, char *buf, size_t n)
+// {
+//     // recv() can return fewer bytes than asked for, so keep calling it until exactly n bytes are read.
+//     // Return false if the connection closes or fails before n bytes arrive.
+// }
+// bool sendAll(int sock, const char *buf, size_t n)
+// {
+//     // send() can send fewer bytes than asked for, so keep calling it until all n bytes are sent.
+//     // Use the flag MSG_NOSIGNAL. Return false if the connection fails.
+// }
 
 int connectToHost(const char *host, int port)
 {
@@ -124,15 +131,122 @@ bool receiveResponse(int sock, const char *outTdbgPath, string &outError)
 // The index lets us jump straight to any step without reading the steps before it.
 // =============================================================================================
 
-bool openTdbg(const char *path, TdbgReader &r)
-{
+bool readExact(int fd, void* buf, int n) {
+    int got = 0;
+    while (got < n) {
+        int r = read(fd, (char*)buf + got, n - got);
+        if (r <= 0) {
+            return false;
+        }
+        got = got + r;
+    }
+    return true;
 }
-void closeTdbg(TdbgReader &r)
-{
-    // Free r.index and close the file.
+ 
+bool readString(int fd, string& out) {
+    int32_t len;
+    if (!readExact(fd, &len, sizeof(int32_t))) {
+        return false;
+    }
+    if (len < 0 || len > MAX_NAME_LENGTH) {
+        return false;
+    }
+    out.resize(len);
+    if (len > 0 && !readExact(fd, &out[0], len)) {
+        return false;
+    }
+    return true;
 }
-Snapshot *readSnapshotAt(TdbgReader &r, int32_t step)
-{
+ 
+bool readVariable(int fd, Variable& v) {
+    if (!readString(fd, v.name)) {
+        return false;
+    }
+    return readExact(fd, &v.value, sizeof(int32_t));
+}
+ 
+bool openTdbg(const char* path, TdbgReader& r) {
+    int fd = open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) {
+        return false;
+    }
+ 
+    TTDBHeader h;
+    bool ok = readExact(fd, h.magic, 4)
+        && readExact(fd, &h.version, sizeof(int32_t))
+        && readExact(fd, &h.stepCount, sizeof(int32_t))
+        && readExact(fd, &h.indexOffset, sizeof(int64_t));
+ 
+    // the index must end exactly where the file ends
+    int64_t fileSize = lseek(fd, 0, SEEK_END);
+    if (!ok || h.magic[0] != 'T' || h.magic[1] != 'T' || h.magic[2] != 'D' || h.magic[3] != 'B'
+        || h.version != 1 || h.stepCount <= 0 || h.indexOffset < HEADER_SIZE
+        || h.indexOffset + (int64_t)h.stepCount * 8 != fileSize) {
+        close(fd);
+        return false;
+    }
+ 
+    vector<int64_t> index(h.stepCount);
+    lseek(fd, h.indexOffset, SEEK_SET);
+    for (int i = 0; i < h.stepCount; i++) {
+        if (!readExact(fd, &index[i], sizeof(int64_t)) || index[i] < HEADER_SIZE || index[i] >= h.indexOffset) {
+            close(fd);
+            return false;
+        }
+    }
+ 
+    r.file_index = fd;
+    r.header = h;
+    r.index = index;
+    return true;
+}
+ 
+void closeTdbg(TdbgReader& r) {
+    if (r.file_index >= 0) {
+        close(r.file_index);
+    }
+    r.file_index = -1;
+    r.index.clear();
+}
+ 
+Snapshot* readSnapshotAt(TdbgReader& r, int32_t step) {
+    if (step < 0 || step >= r.header.stepCount) {
+        return NULL;
+    }
+    int fd = r.file_index;
+    lseek(fd, r.index[step], SEEK_SET);
+ 
+    Snapshot* s = new Snapshot;
+    bool ok = readExact(fd, &s->stackDepth, sizeof(int32_t));
+    if (ok && (s->stackDepth < 0 || s->stackDepth > MAX_STACK_DEPTH)) {
+        ok = false;
+    }
+ 
+    for (int i = 0; ok && i < s->stackDepth; i++) {
+        Frame& fr = s->callStack[i];
+        ok = readString(fd, fr.func_name) && readExact(fd, &fr.argc, sizeof(int32_t));
+        if (ok && (fr.argc < 0 || fr.argc > MAX_VARS_PER_FRAME)) {
+            ok = false;
+        }
+        for (int j = 0; ok && j < fr.argc; j++) {
+            ok = readVariable(fd, fr.argv[j]);
+        }
+        if (ok) {
+            ok = readExact(fd, &fr.returnLine, sizeof(int32_t)) && readExact(fd, &fr.localCount, sizeof(int32_t));
+        }
+        if (ok && (fr.localCount < 0 || fr.localCount > MAX_VARS_PER_FRAME)) {
+            ok = false;
+        }
+        for (int j = 0; ok && j < fr.localCount; j++) {
+            ok = readVariable(fd, fr.locals[j]);
+        }
+    }
+ 
+    if (!ok) {
+        delete s;
+        return NULL;
+    }
+    return s;
 }
 
 // =============================================================================================
@@ -140,15 +254,20 @@ Snapshot *readSnapshotAt(TdbgReader &r, int32_t step)
 // There is one DebugSession variable, created in main() and passed to every command by reference.
 // =============================================================================================
 
-void initSession(DebugSession &s)
-{
-   
+void initSession(DebugSession& s) {
+    s.active_flag = false;
+    s.reader.file_index = -1;
+    s.currentStep = 0;
 }
-void closeSession(DebugSession &s)
-{
-    // If active, call closeTdbg(s.reader). Then set active = false.
-    // Called when the user types quit and when the input ends.
+ 
+void closeSession(DebugSession& s) {
+    if (s.active_flag) {
+        closeTdbg(s.reader);
+    }
+    s.active_flag = false;
 }
+ 
+
 
 // =============================================================================================
 // PART D: THE COMMANDS
@@ -183,13 +302,53 @@ bool cmdJmpPrv(DebugSession &s, int32_t n) { }
 // PART E: PRINTING
 // =============================================================================================
 
-void printSnapshot(int32_t step, int32_t totalSteps, const Snapshot &s)
-{
+void printVariables(const Variable vars[], int32_t count) {
+    for (int i = 0; i < count; i++) {
+        cout << vars[i].name << "=" << vars[i].value;
+        if (i < count - 1) {
+            cout << ", ";
+        }
+    }
 }
-void printHelp()
-{
-    // Print the commands
+ 
+void printSnapshot(int32_t step, int32_t totalSteps, const Snapshot& s) {
+    cout << "---- step " << step << " of " << totalSteps << " ----" << endl;
+    if (s.stackDepth == 0) {
+        cout << "  (program finished, call stack is empty)" << endl;
+        return;
+    }
+    for (int i = 0; i < s.stackDepth; i++) {
+        const Frame& fr = s.callStack[i];
+        if (i == 0) {
+            cout << "  -> ";
+        }
+        else {
+            cout << "     ";
+        }
+        cout << fr.func_name;
+        if (fr.argc > 0) {
+            cout << "   params: ";
+            printVariables(fr.argv, fr.argc);
+        }
+        if (fr.localCount > 0) {
+            cout << "   locals: ";
+            printVariables(fr.locals, fr.localCount);
+        }
+        cout << endl;
+    }
 }
+ 
+void printHelp() {
+    cout << "commands:" << endl;
+    cout << "  start <file>     send a C-- program and load its timeline" << endl;
+    cout << "  next             one step forward" << endl;
+    cout << "  prv              one step back" << endl;
+    cout << "  jmp next <n>     n steps forward" << endl;
+    cout << "  jmp prv <n>      n steps back" << endl;
+    cout << "  help             show this list" << endl;
+    cout << "  quit / exit      leave" << endl;
+}
+
 
 // =============================================================================================
 // PART F: THE INFINITE LOOP
