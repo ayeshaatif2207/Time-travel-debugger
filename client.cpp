@@ -37,6 +37,8 @@ string LB_HOST = "127.0.0.1";
 int LB_PORT = 5000;
 const int HEADER_SIZE = 20;     // 4 magic + 4 version + 4 stepCount + 8 indexOffset
 const int MAX_NAME_LENGTH = 4096;  //longer name = damages file
+const char* DOWNLOAD_FILE = "ttdb_download.tmp"; // new download stored seperately so that the old version still is there just in case
+const int CLIENT_TIMEOUT_SEC = 30;
 
 // These two must be the same as in Phase 1
 // this is now in helper.h 
@@ -104,24 +106,121 @@ struct DebugSession
 //     // Use the flag MSG_NOSIGNAL. Return false if the connection fails.
 // }
 
-int connectToHost(const char *host, int port)
-{
-    // Create a TCP socket and connect it to host:port.
-    // Return the socket, or -1 if the connection fails.
+int connectToHost(const char* host, int port) {
+    return connectTo(host, port);
 }
-bool uploadSource(int sock, const char *sourcePath)
-{
-    // have to do checksum and then send
-    // When the file is finished, call shutdown(sock, SHUT_WR). This is how the server knows the string is complete.
-    // Return false if the file cannot be opened or any send fails.
+
+bool uploadSource(int sock, const char* sourcePath) {
+    if (!sendFileMessage(sock, STATUS_OK, sourcePath)) {
+        return false;
+    }
+    shutdown(sock, SHUT_WR); // "upload finished"
+    return true;
 }
-bool receiveResponse(int sock, const char *outTdbgPath, string &outError)
-{
-    // Reply on the wire: [status][payload][CRC-32]. The CRC covers the status byte too.
-    // Feed every received byte (status included) to a TrailerChecker.
-    // Status 1: collect the payload into outError. Status 0: write the payload to the file.
-    // At the end call verify(). If it fails, delete the file, set outError to
-    // "checksum mismatch, response corrupted" and return false.
+
+bool receiveResponse(int sock, const char* outTdbgPath, string& outError) {
+    TrailerChecker checker;
+    char* buf = new char[IO_BUFFER_SIZE];
+    char* body = new char[IO_BUFFER_SIZE + CHECKSUM_SIZE];
+    bool gotStatus = false;
+    char status = STATUS_ERROR;
+    FILE* out = NULL;
+    string errorText = "";
+    bool timedOut = false;
+    bool connectionLost = false;
+
+    while (true) {
+        int n = recv(sock, buf, IO_BUFFER_SIZE, 0);
+        if (n == 0) {
+            break;
+        }
+        if (n < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                timedOut = true;
+            }
+            else {
+                connectionLost = true;
+            }
+            break;
+        }
+
+        int released = checker.feed(buf, n, body);
+        int start = 0;
+        if (released > 0 && !gotStatus) {
+            gotStatus = true;
+            status = body[0];
+            start = 1;
+            if (status == STATUS_OK) {
+                out = fopen(outTdbgPath, "wb");
+            }
+        }
+        if (status == STATUS_OK && out != NULL) {
+            fwrite(body + start, 1, released - start, out);
+        }
+        else {
+            errorText.append(body + start, released - start);
+        }
+    }
+    delete[] buf;
+    delete[] body;
+    if (out != NULL) {
+        fclose(out);
+    }
+
+    if (timedOut || connectionLost) {
+        remove(outTdbgPath);
+        if (timedOut) {
+            outError = "no reply from the server (timed out)";
+        }
+        else {
+            outError = "connection to the load balancer was lost";
+        }
+        return false;
+    }
+    if (!gotStatus) {
+        outError = "connection closed with no reply";
+        return false;
+    }
+    if (!checker.verify()) {
+        remove(outTdbgPath);
+        outError = "checksum mismatch, response corrupted";
+        return false;
+    }
+    if (status != STATUS_OK) {
+        outError = errorText;
+        return false;
+    }
+    if (out == NULL) {
+        outError = "could not save the downloaded file";
+        return false;
+    }
+    return true;
+}
+
+bool requestDebugFile(const string& host, int port, const string& sourcePath,
+                      const char* outTdbgPath, string& outError) {
+    FILE* test = fopen(sourcePath.c_str(), "rb");
+    if (test == NULL) {
+        outError = "cannot open " + sourcePath;
+        return false;
+    }
+    fclose(test);
+
+    int sock = connectToHost(host.c_str(), port);
+    if (sock < 0) {
+        outError = "cannot connect to the load balancer at " + host + ":" + to_string(port);
+        return false;
+    }
+    setRecvTimeout(sock, CLIENT_TIMEOUT_SEC);
+
+    if (!uploadSource(sock, sourcePath.c_str())) {
+        close(sock);
+        outError = "upload failed";
+        return false;
+    }
+    bool ok = receiveResponse(sock, outTdbgPath, outError);
+    close(sock);
+    return ok;
 }
 
 // =============================================================================================
@@ -273,30 +372,95 @@ void closeSession(DebugSession& s) {
 // PART D: THE COMMANDS
 // =============================================================================================
 
-void printSnapshot(int32_t step, int32_t totalSteps, const Snapshot &s); // defined in Part E
+void printSnapshot(int32_t step, int32_t totalSteps, const Snapshot& s);
 
-bool showCurrent(DebugSession &s)
-{
-    // Read the snapshot at s.currentStep, call printSnapshot, delete the snapshot.
-    // If readSnapshotAt returns nullptr, print "damaged .tdbg file" and return false.
+bool showCurrent(DebugSession& s) {
+    Snapshot* snap = readSnapshotAt(s.reader, s.currentStep);
+    if (snap == NULL) {
+        cout << "damaged .tdbg file" << endl;
+        return false;
+    }
+    printSnapshot(s.currentStep + 1, s.reader.header.stepCount, *snap);
+    delete snap;
+    return true;
 }
-bool moveBy(DebugSession &s, int32_t delta)
-{
+
+bool moveBy(DebugSession& s, int32_t delta) {
+    if (!s.active_flag) {
+        cout << "no session yet, type: start <file>" << endl;
+        return false;
+    }
+    int64_t total = s.reader.header.stepCount;
+
+    if (delta > 0 && s.currentStep == total - 1) {
+        cout << "already at the last step (" << total << ")" << endl;
+        return false;
+    }
+    if (delta < 0 && s.currentStep == 0) {
+        cout << "already at the first step" << endl;
+        return false;
+    }
+
+    int64_t target = s.currentStep + delta;
+    if (target >= total) {
+        cout << "(only " << total << " steps, stopped at the last one)" << endl;
+        target = total - 1;
+    }
+    if (target < 0) {
+        cout << "(stopped at the first step)" << endl;
+        target = 0;
+    }
+    s.currentStep = target;
+    return showCurrent(s);
 }
-bool cmdStart(DebugSession &s, const string &sourcePath)
-{
-    // 1. requestDebugFile with host and port, saving to TDBG_FILE.
-    // 2. If it fails, print the error text and return false. Keep the old session as it was.
-    // 3. Open the new file with openTdbg into a NEW local TdbgReader.
-    //    If that fails, print "server sent a damaged .tdbg file", keep the old session, return false.
-    // 4. Only now close the old reader (if s.active), then put the new reader into s,
-    //    set s.currentStep = 0 and s.active = true.
-    // 5. Show step 1 with showCurrent(s).
+
+bool cmdStart(DebugSession& s, const string& sourcePath) {
+    string error;
+    cout << "sending " << sourcePath << " ..." << endl;
+    if (!requestDebugFile(LB_HOST, LB_PORT, sourcePath, DOWNLOAD_FILE, error)) {
+        cout << "error: " << error << endl;
+        if (s.active_flag) {
+            cout << "(your previous session is still open)" << endl;
+        }
+        return false;
+    }
+
+    TdbgReader newReader;
+    newReader.file_index = -1;
+    if (!openTdbg(DOWNLOAD_FILE, newReader)) {
+        remove(DOWNLOAD_FILE);
+        cout << "server sent a damaged .tdbg file" << endl;
+        if (s.active_flag) {
+            cout << "(your previous session is still open)" << endl;
+        }
+        return false;
+    }
+
+    // only now replace the old session
+    if (s.active_flag) {
+        closeTdbg(s.reader);
+    }
+    rename(DOWNLOAD_FILE, TDBG_FILE);
+    s.reader = newReader;
+    s.currentStep = 0;
+    s.active_flag = true;
+
+    cout << "loaded " << s.reader.header.stepCount << " steps" << endl;
+    return showCurrent(s);
 }
-bool cmdNext(DebugSession &s) {}
-bool cmdPrv(DebugSession &s) {}
-bool cmdJmpNext(DebugSession &s, int32_t n) {}
-bool cmdJmpPrv(DebugSession &s, int32_t n) { }
+
+bool cmdNext(DebugSession& s) {
+    return moveBy(s, 1);
+}
+bool cmdPrv(DebugSession& s) {
+    return moveBy(s, -1);
+}
+bool cmdJmpNext(DebugSession& s, int32_t n) {
+    return moveBy(s, n);
+}
+bool cmdJmpPrv(DebugSession& s, int32_t n) {
+    return moveBy(s, -n);
+}
 
 // =============================================================================================
 // PART E: PRINTING
@@ -354,31 +518,101 @@ void printHelp() {
 // PART F: THE INFINITE LOOP
 // =============================================================================================
 
-bool runCommand(DebugSession &s, const string &line, bool &quitRequested)
-{
-    // 1. Split the line into words.
-    // 2. If the first word is "ttdb", drop it.
-    // 3. Match the first word:
-    //      start      -> needs a path after it, then cmdStart
-    //      next       -> no more words, then cmdNext
-    //      prv        -> no more words, then cmdPrv
-    //      jmp        -> second word "next" or "prv", third word a positive number ,
-    //                    then cmdJmpNext or cmdJmpPrv
-    //      help       -> printHelp
-    //      quit, exit -> set quitRequested = true
-    // 4. For anything else, or a wrong number of words, print "unknown command" and the help text, and return false.
+bool parsePositive(const string& s, int32_t& out) {
+    if (s.size() == 0 || s.size() > 10) {
+        return false;
+    }
+    for (int i = 0; i < (int)s.size(); i++) {
+        if (s[i] < '0' || s[i] > '9') {
+            return false;
+        }
+    }
+    long long v = atoll(s.c_str());
+    if (v <= 0 || v > MAX_JUMP) {
+        return false;
+    }
+    out = v;
+    return true;
 }
-int main(int argc, char *argv[])
-{
-    // you get string LB_HOST and int LB_PORT = 0 in arguments of this main function. 
 
-    // DebugSession session; initSession(session);
-    // Print a short welcome and the help text.
-    //
-    // Infinite loop:
-    //   if quitRequested, break
-    //
-    // After the loop: closeSession(session) and return 0.
-    // Never exit the loop because of an error. Only quit or the end of the input leaves it.
+bool runCommand(DebugSession& s, const string& line, bool& quitRequested) {
+    vector<string> words;
+    stringstream ss(line);
+    string w;
+    while (ss >> w) {
+        words.push_back(w);
+    }
+    if (words.size() > 0 && words[0] == PROGRAM_NAME) {
+        words.erase(words.begin());
+    }
+    if (words.size() == 0) {
+        return true;
+    }
 
+    string cmd = words[0];
+    if (cmd == "start" && words.size() == 2) {
+        return cmdStart(s, words[1]);
+    }
+    if (cmd == "next" && words.size() == 1) {
+        return cmdNext(s);
+    }
+    if (cmd == "prv" && words.size() == 1) {
+        return cmdPrv(s);
+    }
+    if (cmd == "jmp" && words.size() == 3) {
+        int32_t n;
+        if (!parsePositive(words[2], n)) {
+            cout << "jmp needs a positive number, e.g. jmp next 3" << endl;
+            return false;
+        }
+        if (words[1] == "next") {
+            return cmdJmpNext(s, n);
+        }
+        if (words[1] == "prv") {
+            return cmdJmpPrv(s, n);
+        }
+    }
+    if (cmd == "help" && words.size() == 1) {
+        printHelp();
+        return true;
+    }
+    if ((cmd == "quit" || cmd == "exit") && words.size() == 1) {
+        quitRequested = true;
+        return true;
+    }
+
+    cout << "unknown command" << endl;
+    printHelp();
+    return false;
+}
+
+int main(int argc, char* argv[]) {
+    if (argc >= 2) {
+        LB_HOST = argv[1];
+    }
+    if (argc >= 3) {
+        LB_PORT = atoi(argv[2]);
+    }
+    signal(SIGPIPE, SIG_IGN);
+    initCrcTable();
+
+    DebugSession session;
+    initSession(session);
+
+    cout << "Time-Travel Debugger (load balancer " << LB_HOST << ":" << LB_PORT << ")" << endl;
+    printHelp();
+
+    bool quitRequested = false;
+    string line;
+    while (!quitRequested) {
+        cout << PROMPT << flush;
+        if (!getline(cin, line)) {
+            cout << endl;
+            break;
+        }
+        runCommand(session, line, quitRequested);
+    }
+
+    closeSession(session);
+    return 0;
 }
