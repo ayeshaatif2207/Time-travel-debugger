@@ -27,7 +27,7 @@ PROGRESS REPORT
 |5-7/11/26 |Studied and practised multithreading using std::thread and std::mutex. Experimented with socket communication between two Ubuntu terminals and began implementing checksum algos|
 | 8/11/26 | finishing up my helper.h and noting all the changes to make to server.cpp  | 
 | 10-11/11/26 | client: parts B, C, E and compile fixes, load balancer queue |
-|  |  |
+|13/11/26| spent the last few days finishing client.cpp, part A took the longest somehow and had alot to learn while doing it | finish off load balancer tomorrow to start on the bonus(es)|
 |  |  |
 |  |  |
 |  |  |
