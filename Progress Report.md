@@ -28,8 +28,8 @@ PROGRESS REPORT
 | 8/11/26 | finishing up my helper.h and noting all the changes to make to server.cpp  | 
 | 10-11/11/26 | client: parts B, C, E and compile fixes, load balancer queue |
 |13/11/26| spent the last few days finishing client.cpp, part A took the longest somehow and had alot to learn while doing it | finish off load balancer tomorrow to start on the bonus(es)|
-|  |  |
-|  |  |
+|15/11/26 | finished loadbalancer fully  | will start working on my cacheing bonus where result will be cached so that the same program doesnt have to be processed again and can be fetched from a cache|
+|17/11/26 | finished the cacheing bonus, marked all changes in server specifying that its for the bonus | got the idea to implement round-robin in my load balancer to be able to  process multiple users/clients | rest day, commit stuff 
 |  |  |
 
 
